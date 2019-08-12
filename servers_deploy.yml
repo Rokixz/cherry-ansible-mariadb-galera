@@ -1,0 +1,143 @@
+- name: Cherry Servers API module
+  connection: local
+  remote_user: root
+  hosts: localhost
+  vars_files:
+   - vars.yml
+  tasks:
+
+  - name: Add SSH key
+    cherryservers_sshkey:
+      label: "{{ cherryservers_ssh_label }}"
+      key_file: "{{ cherryservers_keyfile_pub }}"
+      state: present
+
+  - name: Manage floating IP No. 1
+    cherryservers_ips:
+     project_id: "{{ cherryservers_project_id }}"
+     region: "{{ cherryservers_region }}"
+     ptr_record: 'galera1.ispconfig.lt'
+     state: present
+    register: floating_ip_galera_1
+
+  - name: Manage floating IP No. 2
+    cherryservers_ips:
+     project_id: "{{ cherryservers_project_id }}"
+     region: "{{ cherryservers_region }}"
+     ptr_record: 'galera2.ispconfig.lt'
+     state: present
+    register: floating_ip_galera_2
+
+  - name: Manage floating IP No. 3
+    cherryservers_ips:
+     project_id: "{{ cherryservers_project_id }}"
+     region: "{{ cherryservers_region }}"
+     ptr_record: 'galera3.ispconfig.lt'
+     state: present
+    register: floating_ip_galera_3
+
+  - name: Deploy CherryServers Server No. 1
+    cherryservers_server:
+      hostname:
+        - galera1.ispconfig.lt
+      plan_id: "{{ cherryservers_plan_id }}"
+      image: "{{ cherryservers_image }}"
+      region: "{{ cherryservers_region }}"
+      project_id: "{{ cherryservers_project_id }}"
+      ssh_label:
+        - "{{ cherryservers_ssh_label }}"
+      state: active
+      ip_address: "{{ floating_ip_galera_1.ip_address[0].address }}"
+
+  - name: Deploy CherryServers Server No. 2
+    cherryservers_server:
+      hostname:
+        - galera2.ispconfig.lt
+      plan_id: "{{ cherryservers_plan_id }}"
+      image: "{{ cherryservers_image }}"
+      region: "{{ cherryservers_region }}"
+      project_id: "{{ cherryservers_project_id }}"
+      ssh_label:
+        - "{{ cherryservers_ssh_label }}"
+      state: active
+      ip_address: "{{ floating_ip_galera_2.ip_address[0].address }}"
+
+  - name: Deploy CherryServers Server No. 3
+    cherryservers_server:
+      hostname:
+        - galera3.ispconfig.lt
+      plan_id: "{{ cherryservers_plan_id }}"
+      image: "{{ cherryservers_image }}"
+      region: "{{ cherryservers_region }}"
+      project_id: "{{ cherryservers_project_id }}"
+      ssh_label:
+        - "{{ cherryservers_ssh_label }}"
+      state: active
+      ip_address: "{{ floating_ip_galera_3.ip_address[0].address }}"
+
+  - name: install packages
+    remote_user: root
+    apt:
+      name: ['mariadb-server','rsync']
+      state: present
+    delegate_to: "{{ item }}"
+    with_items:
+    - "{{ floating_ip_galera_1.ip_address[0].address }}"
+    - "{{ floating_ip_galera_2.ip_address[0].address }}"
+    - "{{ floating_ip_galera_3.ip_address[0].address }}"
+
+  - name: Galera Config Server No. 1
+    remote_user: root
+    set_fact:
+      cluster_ips: "{{ floating_ip_galera_1.ip_address[0].address }},{{ floating_ip_galera_2.ip_address[0].address }},{{ floating_ip_galera_3.ip_address[0].address }}"
+      node_ip: "{{ floating_ip_galera_1.ip_address[0].address }}"
+      node_name: "galera1.ispconfig.lt"
+  - template:
+     src: templates/galera.cnf
+     dest: /etc/mysql/conf.d/galera.cnf
+    delegate_to: '{{ floating_ip_galera_1.ip_address[0].address }}'
+
+  - name: Galera Config Server No. 2
+    remote_user: root
+    set_fact:
+      cluster_ips: "{{ floating_ip_galera_1.ip_address[0].address }},{{ floating_ip_galera_2.ip_address[0].address }},{{ floating_ip_galera_3.ip_address[0].address }}"
+      node_ip: "{{ floating_ip_galera_2.ip_address[0].address }}"
+      node_name: "galera2.ispconfig.lt"
+  - template:
+     src: templates/galera.cnf
+     dest: /etc/mysql/conf.d/galera.cnf
+    delegate_to: '{{ floating_ip_galera_2.ip_address[0].address }}'
+  
+  - name: Galera Config Server No. 3
+    remote_user: root
+    set_fact:
+      cluster_ips: "{{ floating_ip_galera_1.ip_address[0].address }},{{ floating_ip_galera_2.ip_address[0].address }},{{ floating_ip_galera_3.ip_address[0].address }}"
+      node_ip: "{{ floating_ip_galera_3.ip_address[0].address }}"
+      node_name: "galera3.ispconfig.lt"
+  - template:
+     src: templates/galera.cnf
+     dest: /etc/mysql/conf.d/galera.cnf
+    delegate_to: '{{ floating_ip_galera_3.ip_address[0].address }}'
+
+  - name: Stop services
+    remote_user: root
+    command: systemctl stop mariadb.service
+    delegate_to: "{{ item }}"
+    with_items:
+    - "{{ floating_ip_galera_1.ip_address[0].address }}"
+    - "{{ floating_ip_galera_2.ip_address[0].address }}"
+    - "{{ floating_ip_galera_3.ip_address[0].address }}"
+
+  - name: Init Galera Bootstrap
+    remote_user: root
+    command: galera_new_cluster
+    delegate_to: "{{ floating_ip_galera_1.ip_address[0].address }}"
+
+  - name: Start services
+    remote_user: root
+    command: systemctl start mariadb.service
+    delegate_to: "{{ item }}"
+    with_items:
+    - "{{ floating_ip_galera_1.ip_address[0].address }}"
+    - "{{ floating_ip_galera_2.ip_address[0].address }}"
+    - "{{ floating_ip_galera_3.ip_address[0].address }}"
