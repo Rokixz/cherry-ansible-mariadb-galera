@@ -5,7 +5,6 @@
   vars_files:
    - vars.yml
   tasks:
-
   - name: Add SSH key
     cherryservers_sshkey:
       label: "{{ cherryservers_ssh_label }}"
