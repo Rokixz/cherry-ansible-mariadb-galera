@@ -5,7 +5,6 @@
   vars_files:
    - vars.yml
   tasks:
-
   - name: Add SSH key
     cherryservers_sshkey:
       label: "{{ cherryservers_ssh_label }}"
@@ -80,6 +79,10 @@
     apt:
       name: ['mariadb-server','rsync']
       state: present
+    register: apt_status
+    until: apt_status is success
+    retries: 10
+    delay: 20
     delegate_to: "{{ item }}"
     with_items:
     - "{{ floating_ip_galera_1.ip_address[0].address }}"
